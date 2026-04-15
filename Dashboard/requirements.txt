@@ -3,4 +3,3 @@ pandas
 plotly
 openpyxl
 numpy
-os
