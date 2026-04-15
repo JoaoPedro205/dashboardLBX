@@ -4,12 +4,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import re
-import os
 
 # ── Página ───────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="LBX Construtora — Dashboard",
-    page_icon="logo.png",
+    page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -54,11 +53,23 @@ div[data-testid="metric-container"] div{{color:#fff!important;}}
 .stTabs [data-baseweb="tab"]{{color:rgba(255,255,255,.6)!important;}}
 .stTabs [aria-selected="true"]{{color:#fff!important;background:rgba(255,255,255,.12)!important;}}
 </style>""", unsafe_allow_html=True)
-
 # ── Carregar e tratar dados ───────────────────────────────────────────────────
-@st.cache_data
-def load(path):
-    df = pd.read_excel(path)
+def _ler_bytes(source):
+    """Converte qualquer fonte (path str, UploadedFile, BytesIO) em bytes puros."""
+    if isinstance(source, (str, os.PathLike)):
+        with open(source, "rb") as f:
+            return f.read()
+    # UploadedFile ou BytesIO
+    if hasattr(source, "getvalue"):
+        return source.getvalue()
+    source.seek(0)
+    return source.read()
+
+@st.cache_data(show_spinner="Carregando dados...", ttl=3600)
+def load(raw_bytes: bytes):
+    import io
+    data = io.BytesIO(raw_bytes)
+    df = pd.read_excel(data)
     df.columns = df.columns.str.strip()
 
     rename = {
@@ -77,147 +88,90 @@ def load(path):
         "Qual o número da Solicitação?":                  "NumSolicitacao",
     }
     # colunas com \xa0
-    # --- SUBSTITUA APENAS O BLOCO DE CARREGAMENTO (LINHAS 79 A 116) POR ESTE ---
+    for col in df.columns:
+        clean = col.replace("\xa0", " ").strip()
+        if "Credor" in clean and "descrição" in clean.lower():
+            rename[col] = "Credor"
+            break
 
-@st.cache_data
-def load(path):
-    try:
-        df = pd.read_excel(path)
-        df.columns = df.columns.str.strip()
+    df = df.rename(columns=rename)
+    df["Inicio"] = pd.to_datetime(df["Inicio"], errors="coerce")
+    df["Fim"]    = pd.to_datetime(df["Fim"],    errors="coerce")
+    df["LeadMin"]    = (df["Fim"] - df["Inicio"]).dt.total_seconds() / 60
+    df["Ano"]        = df["Inicio"].dt.year
+    df["Mes"]        = df["Inicio"].dt.month
+    df["MesAno"]     = df["Inicio"].dt.to_period("M").astype(str)
+    df["DiaSemana"]  = df["Inicio"].dt.day_name()
+    df["HoraDia"]    = df["Inicio"].dt.hour
+    df["Semana"]     = df["Inicio"].dt.to_period("W").astype(str)
 
-        # Dicionário de tradução/renomeação original
-        rename = {
-            "Para qual obra deseja regularizar um contrato?": "Obra",
-            "A solicitação está aprovada?":                   "Aprovada",
-            "Essa regularização faz parte da carteira de qual setor?": "Setor",
-            "Qual regularização deseja realizar?":            "Tipo",
-            "Especifique o motivo da compra ter sido feita diretamente pela obra": "Motivo",
-            "Especifique a Categoria:":                       "Categoria",
-            "Qual o tipo de contrato?":                       "TipoContrato",
-            "Haverá caução ou retenção nesse contrato?":      "Caucao",
-            "Condição de pagamento negociada":                "Pagamento",
-            "Nome":                                           "Usuario",
-            "Hora de início":                                 "Inicio",
-            "Hora de conclusão":                              "Fim",
-            "Qual o número da Solicitação?":                  "NumSolicitacao",
-        }
+    # normalizar pagamento
+    def norm_pag(v):
+        if pd.isna(v): return None
+        v = str(v).upper().strip()
+        if "TED" in v:    return "TED"
+        if "BOLETO" in v or v.startswith("BOL"): return "Boleto"
+        if "PIX" in v:    return "PIX"
+        if "FATURA" in v: return "Fatura"
+        return "Outros"
+    df["PagNorm"] = df["Pagamento"].apply(norm_pag)
 
-        # Lógica especial para a coluna Credor (mantida)
-        for col in df.columns:
-            clean = col.replace("\xa0", " ").strip()
-            if "Credor" in clean and "descrição" in clean.lower():
-                rename[col] = "Credor"
-                break
+    # ── Tratar nulos em colunas de filtro para não perder registros ──────────
+    df["Setor"]    = df["Setor"].fillna("Não informado")
+    df["Usuario"]  = df["Usuario"].fillna("Não identificado")
+    df["Categoria"]= df["Categoria"].fillna("Não informado")
+    df["Motivo"]   = df["Motivo"].fillna("Não informado")
+    df["TipoContrato"] = df["TipoContrato"].fillna("Não informado")
+    df["Caucao"]   = df["Caucao"].fillna("Não informado")
+    df["PagNorm"]  = df["PagNorm"].fillna("Não informado")
 
-        df = df.rename(columns=rename)
+    df["Aprovada_bool"] = df["Aprovada"] == "Sim"
+    return df
 
-        # Garantir que as colunas essenciais existam (evita erro de 'KeyError')
-        colunas_necessarias = ["Inicio", "Fim", "Aprovada", "Obra", "Setor", "Tipo"]
-        for c in colunas_necessarias:
-            if c not in df.columns:
-                df[c] = np.nan
+# ── Carregar dados: tenta arquivo local, senão pede upload ──────────────────
+import glob, os, io
 
-        # Tratamento de datas e métricas
-        df["Inicio"] = pd.to_datetime(df["Inicio"], errors="coerce")
-        df["Fim"]    = pd.to_datetime(df["Fim"],    errors="coerce")
-        
-        # Lead Time com proteção contra nulos
-        df["LeadMin"] = (df["Fim"] - df["Inicio"]).dt.total_seconds() / 60
-        df["LeadMin"] = df["LeadMin"].fillna(0)
+# Procura qualquer .xlsx na pasta do script (funciona com qualquer nome)
+_xlsx_locais = glob.glob(os.path.join(os.path.dirname(__file__) if "__file__" in dir() else ".", "*.xlsx"))
+_fonte_local = _xlsx_locais[0] if _xlsx_locais else None
 
-        # Derivadas de tempo
-        df["Ano"]      = df["Inicio"].dt.year
-        df["Mes"]      = df["Inicio"].dt.month
-        df["MesAno"]   = df["Inicio"].dt.to_period("M").astype(str)
-        df["DiaSemana"] = df["Inicio"].dt.day_name()
-        df["HoraDia"]  = df["Inicio"].dt.hour
-        df["Semana"]   = df["Inicio"].dt.to_period("W").astype(str)
-
-        # Normalização de pagamento
-        def norm_pag(v):
-            if pd.isna(v): return "Não informado"
-            v = str(v).upper().strip()
-            if "TED" in v:    return "TED"
-            if "BOLETO" in v or v.startswith("BOL"): return "Boleto"
-            if "PIX" in v:    return "PIX"
-            if "FATURA" in v: return "Fatura"
-            return "Outros"
-        
-        df["PagNorm"] = df["Pagamento"].apply(norm_pag)
-
-        # Preenchimento de nulos para filtros (evita que registros sumam)
-        for col_fill in ["Setor", "Usuario", "Categoria", "Motivo", "TipoContrato", "Caucao", "Obra", "Tipo"]:
-            if col_fill in df.columns:
-                df[col_fill] = df[col_fill].fillna("Não informado")
-
-        df["Aprovada_bool"] = df["Aprovada"] == "Sim"
-        return df
-    except Exception as e:
-        st.error(f"Erro ao processar arquivo: {e}")
-        return None
-
-# ── Lógica de Upload Corrigida ───────────────────────────────────────────────
-ARQUIVO_LOCAL = "dados.xlsx"
-df = None
-
-# Tenta carregar local primeiro
-try:
-    if os.path.exists(ARQUIVO_LOCAL):
-        df = load(ARQUIVO_LOCAL)
-except:
-    pass
-
-# Se não carregou local, pede o upload
-if df is None:
+if _fonte_local:
+    df = load(_ler_bytes(_fonte_local))
+else:
+    # Arquivo nao encontrado localmente — exibe uploader
     with st.sidebar:
         st.markdown("---")
         st.markdown("### Carregar planilha")
-        fonte = st.file_uploader(
+        _upload = st.file_uploader(
             "Selecione o arquivo .xlsx do Forms",
             type=["xlsx"],
-            help="Faça upload da planilha exportada do Microsoft Forms"
+            help="Qualquer nome de arquivo é aceito"
         )
-        if fonte:
-            df = load(fonte)
-
-# Se após o upload o df ainda for None, para a execução com aviso amigável
-if df is None:
-    st.markdown(
-        f"<div style='text-align:center;padding:80px 20px;'>"
-        f"<h2 style='color:#4a9fe0;'>LBX Construtora</h2>"
-        f"<p style='color:rgba(255,255,255,.6);font-size:15px;'>"  
-        f"Aguardando upload da planilha <b>.xlsx</b> para gerar os indicadores.</p>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-    st.stop()
-
-# ── Upload ou leitura local ──────────────────────────────────────────────────
-ARQUIVO_LOCAL = "dados.xlsx"
-
-fonte = None
-try:
-    df = load(ARQUIVO_LOCAL)
-except FileNotFoundError:
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### Carregar planilha")
-        fonte = st.file_uploader(
-            "Selecione o arquivo .xlsx do Forms",
-            type=["xlsx"],
-            help="Faça upload da planilha exportada do Microsoft Forms"
-        )
-    if fonte is None:
+    if _upload is None:
         st.markdown(
-            f"<div style='text-align:center;padding:80px 20px;'>"
-            f"<h2 style='color:{BACC};'>LBX Construtora</h2>"
-            f"<p style='color:rgba(255,255,255,.6);font-size:15px;'>"  
-            f"Faça upload da planilha <b>.xlsx</b> no painel lateral para carregar o dashboard.</p>"
-            f"</div>",
+            "<div style='text-align:center;padding:80px 20px;'>"
+            "<p style='color:rgba(255,255,255,.5);font-size:15px;'>"
+            "Faça upload da planilha <b>.xlsx</b> no painel lateral.</p>"
+            "</div>",
             unsafe_allow_html=True
         )
         st.stop()
-    df = load(fonte)
+    try:
+        # Lê os bytes do arquivo enviado pelo usuário
+        _bytes = _upload.getvalue()
+        if len(_bytes) == 0:
+            st.error("O arquivo enviado está vazio. Tente novamente.")
+            st.stop()
+        df = load(_bytes)
+    except Exception as e:
+        st.error(
+            f"**Erro ao processar o arquivo:** {e}\n\n"
+            "Causas comuns:\n"
+            "- O arquivo não é um `.xlsx` válido\n"
+            "- O arquivo está corrompido ou protegido por senha\n"
+            "- As colunas não correspondem ao formato esperado do Microsoft Forms"
+        )
+        st.stop()
 
 
 # ── Sidebar — Filtros ─────────────────────────────────────────────────────────
