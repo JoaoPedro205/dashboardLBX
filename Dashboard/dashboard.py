@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import re
-
+ 
 # ── Página ───────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="LBX Construtora — Dashboard",
@@ -12,21 +12,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
+ 
 # ── Cores LBX ─────────────────────────────────────────────────────────────────
 NAVY, BLUE, BACC   = "#0e1c35", "#2e74d4", "#4a9fe0"
 PURPLE, GREEN, RED = "#534AB7", "#1D9E75", "#e05a3a"
 GOLD, TEAL         = "#f0a830", "#0F6E56"
 COLORS3 = [BLUE, PURPLE, GREEN]
 COLORS5 = [BLUE, PURPLE, GREEN, GOLD, RED]
-
+ 
 PLOT = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     font=dict(color="rgba(255,255,255,0.7)", family="Segoe UI, sans-serif"),
     margin=dict(l=8, r=8, t=36, b=8),
     legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="rgba(255,255,255,0.7)")),
 )
-
+ 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
@@ -64,14 +64,14 @@ def _ler_bytes(source):
         return source.getvalue()
     source.seek(0)
     return source.read()
-
+ 
 @st.cache_data(show_spinner="Carregando dados...", ttl=3600)
 def load(raw_bytes: bytes):
     import io
     data = io.BytesIO(raw_bytes)
     df = pd.read_excel(data)
     df.columns = df.columns.str.strip()
-
+ 
     rename = {
         "Para qual obra deseja regularizar um contrato?": "Obra",
         "A solicitação está aprovada?":                   "Aprovada",
@@ -93,7 +93,7 @@ def load(raw_bytes: bytes):
         if "Credor" in clean and "descrição" in clean.lower():
             rename[col] = "Credor"
             break
-
+ 
     df = df.rename(columns=rename)
     df["Inicio"] = pd.to_datetime(df["Inicio"], errors="coerce")
     df["Fim"]    = pd.to_datetime(df["Fim"],    errors="coerce")
@@ -104,7 +104,7 @@ def load(raw_bytes: bytes):
     df["DiaSemana"]  = df["Inicio"].dt.day_name()
     df["HoraDia"]    = df["Inicio"].dt.hour
     df["Semana"]     = df["Inicio"].dt.to_period("W").astype(str)
-
+ 
     # normalizar pagamento
     def norm_pag(v):
         if pd.isna(v): return None
@@ -115,7 +115,7 @@ def load(raw_bytes: bytes):
         if "FATURA" in v: return "Fatura"
         return "Outros"
     df["PagNorm"] = df["Pagamento"].apply(norm_pag)
-
+ 
     # ── Tratar nulos em colunas de filtro para não perder registros ──────────
     df["Setor"]    = df["Setor"].fillna("Não informado")
     df["Usuario"]  = df["Usuario"].fillna("Não identificado")
@@ -124,17 +124,17 @@ def load(raw_bytes: bytes):
     df["TipoContrato"] = df["TipoContrato"].fillna("Não informado")
     df["Caucao"]   = df["Caucao"].fillna("Não informado")
     df["PagNorm"]  = df["PagNorm"].fillna("Não informado")
-
+ 
     df["Aprovada_bool"] = df["Aprovada"] == "Sim"
     return df
-
+ 
 # ── Carregar dados: tenta arquivo local, senão pede upload ──────────────────
 import glob, os, io
-
+ 
 # Procura qualquer .xlsx na pasta do script (funciona com qualquer nome)
 _xlsx_locais = glob.glob(os.path.join(os.path.dirname(__file__) if "__file__" in dir() else ".", "*.xlsx"))
 _fonte_local = _xlsx_locais[0] if _xlsx_locais else None
-
+ 
 if _fonte_local:
     df = load(_ler_bytes(_fonte_local))
 else:
@@ -172,29 +172,29 @@ else:
             "- As colunas não correspondem ao formato esperado do Microsoft Forms"
         )
         st.stop()
-
-
+ 
+ 
 # ── Sidebar — Filtros ─────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"<h2 style='color:{BACC}!important;font-size:16px;letter-spacing:.06em;'>⚙ FILTROS</h2>", unsafe_allow_html=True)
-
+ 
     anos = sorted(df["Ano"].dropna().unique().tolist())
     anos_sel = st.multiselect("Ano", anos, default=anos)
-
+ 
     obras_disp = sorted(df["Obra"].dropna().unique())
     obras_sel  = st.multiselect("Obra", obras_disp, default=obras_disp)
-
+ 
     setores_disp = sorted(df["Setor"].dropna().unique())
     setores_sel  = st.multiselect("Setor", setores_disp, default=setores_disp)
-
+ 
     tipos_disp = sorted(df["Tipo"].dropna().unique())
     tipos_sel  = st.multiselect("Tipo", tipos_disp, default=tipos_disp)
-
+ 
     aprov_sel = st.radio("Aprovação", ["Todos", "Aprovadas", "Não aprovadas"], index=0)
-
+ 
     st.markdown("---")
     st.markdown(f"<span style='font-size:11px;color:rgba(255,255,255,.4);'>Base: {len(df):,} registros</span>", unsafe_allow_html=True)
-
+ 
 # ── Filtrar ───────────────────────────────────────────────────────────────────
 dff = df[
     df["Ano"].isin(anos_sel) &
@@ -204,7 +204,7 @@ dff = df[
 ].copy()
 if aprov_sel == "Aprovadas":      dff = dff[dff["Aprovada"] == "Sim"]
 elif aprov_sel == "Não aprovadas": dff = dff[dff["Aprovada"] == "Não"]
-
+ 
 # ── Cabeçalho ─────────────────────────────────────────────────────────────────
 st.markdown(
     f"<h1 style='text-align:center;letter-spacing:.08em;font-size:24px;margin-bottom:2px;'>LBX CONSTRUTORA</h1>"
@@ -212,7 +212,7 @@ st.markdown(
     f"DASHBOARD DE REGULARIZAÇÃO · CONTRATOS · ADITIVOS · PEDIDOS DE COMPRA</p>",
     unsafe_allow_html=True
 )
-
+ 
 # ══════════════════════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -223,7 +223,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "👤  Operacional",
     "🔍  Dados Brutos",
 ])
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 — VISÃO GERAL
 # ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ with tab1:
     lead_med   = dff["LeadMin"].median()
     n_obras    = dff["Obra"].nunique()
     n_usuarios = dff["Usuario"].nunique()
-
+ 
     st.markdown("<div class='sec'>KPIs principais</div>", unsafe_allow_html=True)
     c1,c2,c3,c4,c5,c6 = st.columns(6)
     cards = [
@@ -252,12 +252,12 @@ with tab1:
             f"<div class='kval' style='color:{color};'>{val}</div>"
             f"<div class='ksub'>{sub}</div></div>", unsafe_allow_html=True
         )
-
+ 
     st.markdown("<div class='sec'>Mix de regularização</div>", unsafe_allow_html=True)
     mix = dff["Tipo"].value_counts().reset_index()
     mix.columns = ["Tipo","Qtd"]
     mix["Pct"] = (mix["Qtd"]/mix["Qtd"].sum()*100).round(1)
-
+ 
     mc1,mc2,mc3 = st.columns(3)
     for col,(_, row) in zip([mc1,mc2,mc3], mix.iterrows()):
         c = COLORS3[_ % 3]
@@ -267,7 +267,7 @@ with tab1:
             f"<div class='ksub'>{row['Pct']}% do total</div></div>",
             unsafe_allow_html=True
         )
-
+ 
     st.markdown("<div class='sec'>Aprovação por tipo</div>", unsafe_allow_html=True)
     aprov_tipo = dff.groupby("Tipo").agg(
         Total=("Aprovada_bool","count"),
@@ -275,7 +275,7 @@ with tab1:
     ).reset_index()
     aprov_tipo["Reprovadas"] = aprov_tipo["Total"] - aprov_tipo["Aprovadas"]
     aprov_tipo["Taxa"] = (aprov_tipo["Aprovadas"]/aprov_tipo["Total"]*100).round(1)
-
+ 
     g1, g2 = st.columns([1.4, 1])
     with g1:
         fig = go.Figure()
@@ -284,14 +284,14 @@ with tab1:
         fig.update_layout(**PLOT, barmode="stack", title="Volume e aprovação por tipo",
                           title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig, use_container_width=True)
-
+ 
     with g2:
         fig2 = px.pie(mix, names="Tipo", values="Qtd", hole=0.58,
                       color_discrete_sequence=COLORS3, title="Distribuição de tipos")
         fig2.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig2.update_traces(textfont_color="white")
         st.plotly_chart(fig2, use_container_width=True)
-
+ 
     # Insights automáticos
     st.markdown("<div class='sec'>Insights automáticos</div>", unsafe_allow_html=True)
     tipo_mais = mix.iloc[0]["Tipo"]
@@ -300,25 +300,25 @@ with tab1:
     obra_top_n= dff["Obra"].value_counts().iloc[0] if total > 0 else 0
     worst_obra = dff.groupby("Obra")["Aprovada_bool"].mean().sort_values().index[0] if total > 0 else "—"
     worst_pct  = dff.groupby("Obra")["Aprovada_bool"].mean().sort_values().iloc[0]*100 if total > 0 else 0
-
+ 
     col_i1, col_i2, col_i3 = st.columns(3)
     col_i1.markdown(f"<div class='insight'>O tipo <b>{tipo_mais}</b> representa <b>{tipo_pct}%</b> de todas as solicitações do período selecionado.</div>", unsafe_allow_html=True)
     col_i2.markdown(f"<div class='insight'><b>{obra_top}</b> é a obra mais demandante com <b>{obra_top_n:,}</b> solicitações registradas.</div>", unsafe_allow_html=True)
     col_i3.markdown(f"<div class='insight'><b>{worst_obra}</b> tem a menor taxa de aprovação: apenas <b>{worst_pct:.1f}%</b> das solicitações aprovadas.</div>", unsafe_allow_html=True)
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 2 — OBRAS & SETORES
 # ─────────────────────────────────────────────────────────────────────────────
 with tab2:
     st.markdown("<div class='sec'>Volume e taxa de aprovação por obra</div>", unsafe_allow_html=True)
-
+ 
     obra_stats = dff.groupby("Obra").agg(
         Total=("Aprovada_bool","count"),
         Aprovadas=("Aprovada_bool","sum"),
     ).reset_index()
     obra_stats["Taxa%"] = (obra_stats["Aprovadas"]/obra_stats["Total"]*100).round(1)
     obra_stats = obra_stats.sort_values("Total", ascending=True)
-
+ 
     fig_obras = go.Figure()
     fig_obras.add_bar(name="Aprovadas",    y=obra_stats["Obra"], x=obra_stats["Aprovadas"],
                       orientation="h", marker_color=GREEN)
@@ -330,7 +330,7 @@ with tab2:
                             title_font_color="rgba(255,255,255,.8)",
                             xaxis_title="Qtd", yaxis_title="")
     st.plotly_chart(fig_obras, use_container_width=True)
-
+ 
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("<div class='sec'>Taxa de aprovação % por obra</div>", unsafe_allow_html=True)
@@ -342,7 +342,7 @@ with tab2:
         fig_taxa.update_layout(**PLOT, coloraxis_showscale=False,
                                title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_taxa, use_container_width=True)
-
+ 
     with col_b:
         st.markdown("<div class='sec'>Distribuição por setor</div>", unsafe_allow_html=True)
         setor_cnt = dff["Setor"].value_counts().reset_index()
@@ -352,7 +352,7 @@ with tab2:
         fig_setor.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_setor.update_traces(textfont_color="white")
         st.plotly_chart(fig_setor, use_container_width=True)
-
+ 
     st.markdown("<div class='sec'>Tipo de regularização por obra (top 10)</div>", unsafe_allow_html=True)
     top10_obras = dff["Obra"].value_counts().head(10).index
     obra_tipo = dff[dff["Obra"].isin(top10_obras)].groupby(["Obra","Tipo"]).size().reset_index(name="Qtd")
@@ -363,37 +363,41 @@ with tab2:
     fig_ot.update_layout(**PLOT, height=400, barmode="stack",
                          title_font_color="rgba(255,255,255,.8)")
     st.plotly_chart(fig_ot, use_container_width=True)
-
+ 
     # Tipo de contrato e caução
     col_tc, col_cau = st.columns(2)
     with col_tc:
         st.markdown("<div class='sec'>Tipo de contrato</div>", unsafe_allow_html=True)
-        tc = dff["TipoContrato"].value_counts().reset_index()
+        # Base: apenas Elaboração de Contrato novo
+        dff_elab = dff[dff["Tipo"] == "Elaboração de Contrato novo"]
+        tc = dff_elab["TipoContrato"].value_counts().reset_index()
         tc.columns = ["Tipo","Qtd"]
         fig_tc = px.pie(tc, names="Tipo", values="Qtd", hole=0.55,
                         color_discrete_sequence=[BLUE, PURPLE],
-                        title="Normal vs. Spot")
+                        title=f"Normal vs. Spot (base: {len(dff_elab):,} elaborações)")
         fig_tc.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_tc.update_traces(textfont_color="white")
         st.plotly_chart(fig_tc, use_container_width=True)
-
+ 
     with col_cau:
         st.markdown("<div class='sec'>Caução / Retenção</div>", unsafe_allow_html=True)
-        cau = dff["Caucao"].value_counts().reset_index()
+        # Base: apenas Elaboração de Contrato novo
+        dff_elab = dff[dff["Tipo"] == "Elaboração de Contrato novo"]
+        cau = dff_elab["Caucao"].value_counts().reset_index()
         cau.columns = ["Tipo","Qtd"]
         fig_cau = px.pie(cau, names="Tipo", values="Qtd", hole=0.55,
                          color_discrete_sequence=COLORS5,
-                         title="Caução e retenção nos contratos")
+                         title=f"Caução e retenção nos contratos (base: {len(dff_elab):,} elaborações)")
         fig_cau.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_cau.update_traces(textfont_color="white")
         st.plotly_chart(fig_cau, use_container_width=True)
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 3 — TEMPORAL
 # ─────────────────────────────────────────────────────────────────────────────
 with tab3:
     st.markdown("<div class='sec'>Evolução mensal por tipo</div>", unsafe_allow_html=True)
-
+ 
     mes_tipo = dff.groupby(["MesAno","Tipo"]).size().reset_index(name="Qtd")
     fig_mt = px.bar(mes_tipo, x="MesAno", y="Qtd", color="Tipo",
                     color_discrete_sequence=COLORS3, barmode="group",
@@ -402,7 +406,7 @@ with tab3:
     fig_mt.update_layout(**PLOT, xaxis_tickangle=-40,
                          title_font_color="rgba(255,255,255,.8)")
     st.plotly_chart(fig_mt, use_container_width=True)
-
+ 
     col_t1, col_t2 = st.columns(2)
     with col_t1:
         st.markdown("<div class='sec'>Aprovadas vs. reprovadas por mês</div>", unsafe_allow_html=True)
@@ -414,7 +418,7 @@ with tab3:
         fig_ma.update_layout(**PLOT, xaxis_tickangle=-40,
                              title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_ma, use_container_width=True)
-
+ 
     with col_t2:
         st.markdown("<div class='sec'>Tendência — média móvel 4 semanas</div>", unsafe_allow_html=True)
         sem_cnt = dff.groupby("Semana").size().reset_index(name="Qtd")
@@ -428,7 +432,7 @@ with tab3:
                              title="Volume semanal + média móvel",
                              title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_mm, use_container_width=True)
-
+ 
     col_t3, col_t4 = st.columns(2)
     with col_t3:
         st.markdown("<div class='sec'>Volume por dia da semana</div>", unsafe_allow_html=True)
@@ -443,7 +447,7 @@ with tab3:
                          title="Distribuição por dia da semana")
         fig_dia.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_dia, use_container_width=True)
-
+ 
     with col_t4:
         st.markdown("<div class='sec'>Volume por hora do dia</div>", unsafe_allow_html=True)
         hora_cnt = dff["HoraDia"].value_counts().sort_index().reset_index()
@@ -455,13 +459,13 @@ with tab3:
         fig_hora.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_hora.update_traces(fill="tozeroy", fillcolor=f"rgba(74,159,224,0.2)")
         st.plotly_chart(fig_hora, use_container_width=True)
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 4 — OPERACIONAL
 # ─────────────────────────────────────────────────────────────────────────────
 with tab4:
     col_u1, col_u2 = st.columns(2)
-
+ 
     with col_u1:
         st.markdown("<div class='sec'>Top 15 usuários por volume</div>", unsafe_allow_html=True)
         user_cnt = dff["Usuario"].value_counts().head(15).reset_index()
@@ -473,7 +477,7 @@ with tab4:
         fig_user.update_layout(**PLOT, height=460,
                                title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_user, use_container_width=True)
-
+ 
     with col_u2:
         st.markdown("<div class='sec'>Lead time por usuário (top 10)</div>", unsafe_allow_html=True)
         user_lead = (
@@ -490,23 +494,26 @@ with tab4:
         fig_lead.update_layout(**PLOT, height=460,
                                title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_lead, use_container_width=True)
-
+ 
     st.markdown("<div class='sec'>Motivos de compra direta pela obra</div>", unsafe_allow_html=True)
     col_m1, col_m2 = st.columns([1.2, 1])
-
+ 
+    # Base: apenas Pedido de Compra
+    dff_pc_mot = dff[dff["Tipo"] == "Pedido de Compra"]
+ 
     with col_m1:
-        motivo_cnt = dff["Motivo"].value_counts().reset_index()
+        motivo_cnt = dff_pc_mot["Motivo"].value_counts().reset_index()
         motivo_cnt.columns = ["Motivo","Qtd"]
         motivo_cnt["Pct"] = (motivo_cnt["Qtd"]/motivo_cnt["Qtd"].sum()*100).round(1)
         fig_mot = px.bar(motivo_cnt.sort_values("Qtd"), x="Qtd", y="Motivo",
                          orientation="h",
                          color="Qtd", color_continuous_scale=[[0,GOLD],[1,RED]],
                          labels={"Qtd":"Ocorrências","Motivo":""},
-                         title="Motivos de compra direta")
+                         title=f"Motivos de compra direta (base: {len(dff_pc_mot):,} pedidos)")
         fig_mot.update_layout(**PLOT, coloraxis_showscale=False,
                               title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_mot, use_container_width=True)
-
+ 
     with col_m2:
         fig_mot2 = px.pie(motivo_cnt, names="Motivo", values="Qtd", hole=0.52,
                           color_discrete_sequence=COLORS5,
@@ -514,21 +521,24 @@ with tab4:
         fig_mot2.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_mot2.update_traces(textfont_color="white", textinfo="percent")
         st.plotly_chart(fig_mot2, use_container_width=True)
-
+ 
     st.markdown("<div class='sec'>Categorias de pedidos de compra</div>", unsafe_allow_html=True)
     col_c1, col_c2 = st.columns([1.5, 1])
-
+ 
+    # Base: apenas Pedido de Compra
+    dff_pc_cat = dff[dff["Tipo"] == "Pedido de Compra"]
+ 
     with col_c1:
-        cat_cnt = dff["Categoria"].value_counts().head(15).reset_index()
+        cat_cnt = dff_pc_cat["Categoria"].value_counts().head(15).reset_index()
         cat_cnt.columns = ["Categoria","Qtd"]
         fig_cat = px.bar(cat_cnt.sort_values("Qtd"), x="Qtd", y="Categoria",
                          orientation="h", color_discrete_sequence=[TEAL],
                          labels={"Qtd":"Ocorrências","Categoria":""},
-                         title="Top 15 categorias de materiais/serviços")
+                         title=f"Top 15 categorias de materiais/serviços (base: {len(dff_pc_cat):,} pedidos)")
         fig_cat.update_layout(**PLOT, height=440,
                               title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_cat, use_container_width=True)
-
+ 
     with col_c2:
         st.markdown("<div class='sec'>Condição de pagamento</div>", unsafe_allow_html=True)
         pag_cnt = dff["PagNorm"].value_counts().dropna().reset_index()
@@ -539,7 +549,7 @@ with tab4:
         fig_pag.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         fig_pag.update_traces(textfont_color="white")
         st.plotly_chart(fig_pag, use_container_width=True)
-
+ 
         st.markdown("<div class='sec'>Lead time — distribuição</div>", unsafe_allow_html=True)
         lead_clip = dff["LeadMin"].clip(upper=60).dropna()
         fig_hist = px.histogram(lead_clip, nbins=30, color_discrete_sequence=[BACC],
@@ -548,13 +558,13 @@ with tab4:
         fig_hist.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)",
                                showlegend=False)
         st.plotly_chart(fig_hist, use_container_width=True)
-
+ 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 5 — DADOS BRUTOS
 # ─────────────────────────────────────────────────────────────────────────────
 with tab5:
     st.markdown("<div class='sec'>Tabela completa de registros filtrados</div>", unsafe_allow_html=True)
-
+ 
     cols_show = [c for c in ["Inicio","Obra","Setor","Tipo","Aprovada","Usuario",
                               "TipoContrato","Caucao","PagNorm","Categoria","Motivo","LeadMin"]
                  if c in dff.columns]
@@ -562,24 +572,24 @@ with tab5:
     df_show["LeadMin"] = df_show["LeadMin"].round(1)
     df_show = df_show.rename(columns={"LeadMin":"Lead (min)","PagNorm":"Pagamento"})
     df_show["Inicio"] = df_show["Inicio"].dt.strftime("%d/%m/%Y %H:%M")
-
+ 
     col_s1, col_s2, col_s3 = st.columns(3)
     busca_obra = col_s1.selectbox("Filtrar por obra", ["Todas"] + sorted(dff["Obra"].dropna().unique().tolist()))
     busca_tipo = col_s2.selectbox("Filtrar por tipo", ["Todos"] + sorted(dff["Tipo"].dropna().unique().tolist()))
     busca_aprov = col_s3.selectbox("Filtrar aprovação", ["Todos","Sim","Não"])
-
+ 
     df_view = df_show.copy()
     if busca_obra  != "Todas":  df_view = df_view[df_view["Obra"] == busca_obra]
     if busca_tipo  != "Todos":  df_view = df_view[df_view["Tipo"] == busca_tipo]
     if busca_aprov != "Todos":  df_view = df_view[df_view["Aprovada"] == busca_aprov]
-
+ 
     st.markdown(f"<p style='color:rgba(255,255,255,.5);font-size:12px;'>{len(df_view):,} registros exibidos</p>",
                 unsafe_allow_html=True)
     st.dataframe(df_view, use_container_width=True, height=500)
-
+ 
     csv = df_view.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Baixar CSV filtrado", csv, "lbx_filtrado.csv", "text/csv")
-
+ 
 # ── Rodapé ────────────────────────────────────────────────────────────────────
 st.markdown(
     f"<p style='text-align:center;font-size:10px;color:rgba(255,255,255,.25);margin-top:30px;'>"
