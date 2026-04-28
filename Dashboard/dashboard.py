@@ -353,15 +353,59 @@ with tab2:
         fig_setor.update_traces(textfont_color="white")
         st.plotly_chart(fig_setor, use_container_width=True)
 
-    st.markdown("<div class='sec'>Tipo de regularização por obra (top 10)</div>", unsafe_allow_html=True)
-    top10_obras = dff["Obra"].value_counts().head(10).index
-    obra_tipo = dff[dff["Obra"].isin(top10_obras)].groupby(["Obra","Tipo"]).size().reset_index(name="Qtd")
+    # ── Mix de tipos por setor — um gráfico por carteira ─────────────────────
+    st.markdown("<div class='sec'>Mix de regularização por carteira</div>", unsafe_allow_html=True)
+    setores_ativos = [s for s in ["Suprimentos","Obra","Planejamento","Não informado"]
+                      if s in dff["Setor"].unique()]
+    cores_tipo_map = {
+        "Aditivo de Contrato":        BLUE,
+        "Pedido de Compra":           PURPLE,
+        "Elaboração de Contrato novo":GREEN,
+    }
+    # Cria uma coluna por setor presente
+    colunas_setores = st.columns(len(setores_ativos))
+    for col_s, setor in zip(colunas_setores, setores_ativos):
+        with col_s:
+            dff_setor = dff[dff["Setor"] == setor]
+            tipo_setor = dff_setor["Tipo"].value_counts().reset_index()
+            tipo_setor.columns = ["Tipo","Qtd"]
+            tipo_setor["Pct"] = (tipo_setor["Qtd"] / tipo_setor["Qtd"].sum() * 100).round(1)
+            total_setor = len(dff_setor)
+            fig_ts = px.pie(
+                tipo_setor, names="Tipo", values="Qtd", hole=0.55,
+                color="Tipo",
+                color_discrete_map=cores_tipo_map,
+                title=f"{setor}<br><sup>{total_setor:,} solicitações</sup>",
+            )
+            fig_ts.update_layout(**PLOT, title_font_color="rgba(255,255,255,.85)",
+                                 showlegend=True)
+            fig_ts.update_layout(legend=dict(
+                                     orientation="v",
+                                     font=dict(size=10, color="rgba(255,255,255,0.7)"),
+                                     bgcolor="rgba(0,0,0,0)",
+                                 ))
+            fig_ts.update_traces(
+                textfont_color="white",
+                textinfo="percent",
+                hovertemplate="<b>%{label}</b><br>%{value:,} solicitações<br>%{percent}<extra></extra>",
+            )
+            st.plotly_chart(fig_ts, use_container_width=True)
+
+    st.markdown("<div class='sec'>Tipo de regularização por obra — todas as obras</div>", unsafe_allow_html=True)
+    obra_tipo = dff.groupby(["Obra","Tipo"]).size().reset_index(name="Qtd")
+    # Ordenar obras pelo total decrescente para facilitar leitura
+    ordem_obras = dff["Obra"].value_counts().index.tolist()
+    obra_tipo["Obra"] = pd.Categorical(obra_tipo["Obra"], categories=ordem_obras[::-1], ordered=True)
+    obra_tipo = obra_tipo.sort_values("Obra")
+    n_obras_total = obra_tipo["Obra"].nunique()
+    altura_ot = max(420, n_obras_total * 28)  # altura dinâmica por número de obras
     fig_ot = px.bar(obra_tipo, x="Qtd", y="Obra", color="Tipo",
                     color_discrete_sequence=COLORS3, orientation="h",
-                    title="Mix de tipos por obra (top 10)",
+                    title=f"Mix de tipos por obra ({n_obras_total} obras)",
                     labels={"Qtd":"Solicitações","Obra":""})
-    fig_ot.update_layout(**PLOT, height=400, barmode="stack",
-                         title_font_color="rgba(255,255,255,.8)")
+    fig_ot.update_layout(**PLOT, height=altura_ot, barmode="stack",
+                         title_font_color="rgba(255,255,255,.8)",
+                         yaxis=dict(tickfont=dict(size=11)))
     st.plotly_chart(fig_ot, use_container_width=True)
 
     # Tipo de contrato e caução
@@ -399,10 +443,24 @@ with tab3:
     st.markdown("<div class='sec'>Evolução mensal por tipo</div>", unsafe_allow_html=True)
 
     mes_tipo = dff.groupby(["MesAno","Tipo"]).size().reset_index(name="Qtd")
+    mes_total = dff.groupby("MesAno").size().reset_index(name="Total")
+
     fig_mt = px.bar(mes_tipo, x="MesAno", y="Qtd", color="Tipo",
                     color_discrete_sequence=COLORS3, barmode="group",
                     labels={"MesAno":"","Qtd":"Solicitações","Tipo":""},
                     title="Solicitações mensais por tipo")
+    # Linha de total mensal sobreposta
+    fig_mt.add_scatter(
+        x=mes_total["MesAno"],
+        y=mes_total["Total"],
+        mode="lines+markers+text",
+        name="Total do mês",
+        line=dict(color=GOLD, width=2.5, dash="dot"),
+        marker=dict(size=7, color=GOLD),
+        text=mes_total["Total"].astype(str),
+        textposition="top center",
+        textfont=dict(color=GOLD, size=11),
+    )
     fig_mt.update_layout(**PLOT, xaxis_tickangle=-40,
                          title_font_color="rgba(255,255,255,.8)")
     st.plotly_chart(fig_mt, use_container_width=True)
