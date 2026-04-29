@@ -478,21 +478,6 @@ with tab3:
         st.plotly_chart(fig_ma, use_container_width=True)
 
     with col_t2:
-        st.markdown("<div class='sec'>Tendência — média móvel 4 semanas</div>", unsafe_allow_html=True)
-        sem_cnt = dff.groupby("Semana").size().reset_index(name="Qtd")
-        sem_cnt["MM4"] = sem_cnt["Qtd"].rolling(4, min_periods=1).mean().round(1)
-        fig_mm = go.Figure()
-        fig_mm.add_bar(x=sem_cnt["Semana"], y=sem_cnt["Qtd"],
-                       name="Semanal", marker_color=f"rgba(46,116,212,0.4)")
-        fig_mm.add_scatter(x=sem_cnt["Semana"], y=sem_cnt["MM4"],
-                           name="Média 4 sem.", line=dict(color=GOLD, width=2))
-        fig_mm.update_layout(**PLOT, xaxis_tickangle=-60, xaxis_nticks=12,
-                             title="Volume semanal + média móvel",
-                             title_font_color="rgba(255,255,255,.8)")
-        st.plotly_chart(fig_mm, use_container_width=True)
-
-    col_t3, col_t4 = st.columns(2)
-    with col_t3:
         st.markdown("<div class='sec'>Volume por dia da semana</div>", unsafe_allow_html=True)
         ordem = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
         nomes = ["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"]
@@ -506,7 +491,7 @@ with tab3:
         fig_dia.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)")
         st.plotly_chart(fig_dia, use_container_width=True)
 
-    with col_t4:
+    with col_t1:
         st.markdown("<div class='sec'>Volume por hora do dia</div>", unsafe_allow_html=True)
         hora_cnt = dff["HoraDia"].value_counts().sort_index().reset_index()
         hora_cnt.columns = ["Hora","Qtd"]
