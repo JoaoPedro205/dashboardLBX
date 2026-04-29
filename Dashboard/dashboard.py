@@ -594,15 +594,6 @@ with tab4:
         fig_pag.update_traces(textfont_color="white")
         st.plotly_chart(fig_pag, use_container_width=True)
 
-        st.markdown("<div class='sec'>Lead time — distribuição</div>", unsafe_allow_html=True)
-        lead_clip = dff["LeadMin"].clip(upper=60).dropna()
-        fig_hist = px.histogram(lead_clip, nbins=30, color_discrete_sequence=[BACC],
-                                labels={"value":"Minutos","count":"Registros"},
-                                title="Distribuição do lead time (até 60 min)")
-        fig_hist.update_layout(**PLOT, title_font_color="rgba(255,255,255,.8)",
-                               showlegend=False)
-        st.plotly_chart(fig_hist, use_container_width=True)
-
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 5 — DADOS BRUTOS
 # ─────────────────────────────────────────────────────────────────────────────
